@@ -21,14 +21,14 @@ def train(cfg):
     # # Fix seeds
     np.random.seed(42)
     torch.manual_seed(42)
-    
+
     is_cuda = (torch.cuda.is_available())
-    device = torch.device("cuda" if is_cuda else "cpu")
+    device = torch.device(f"cuda:{cfg['gpu_id']}" if is_cuda else "cpu")
 
     # params
     out_dir = cfg['training']['out_dir']
     backup_every = cfg['training']['backup_every']
-    
+
     lr = cfg['training']['learning_rate']
 
     mode = cfg['training']['mode']
@@ -36,19 +36,19 @@ def train(cfg):
     test_loader, _ = dl.get_dataloader(cfg, mode=mode, shuffle=cfg['dataloading']['shuffle'])
     iter_test = iter(test_loader)
     data_test = next(iter_test)
-    
+
 
     n_views = train_dataset['img'].N_imgs
     # init network
     network_type = cfg['model']['network_type']
     auto_scheduler = cfg['training']['auto_scheduler']
     scheduling_epoch = cfg['training']['scheduling_epoch']
-    
+
 
     if network_type=='official':
         model = mdl.OfficialStaticNerf(cfg)
-    
-     # init renderer 
+
+     # init renderer
     rendering_cfg = cfg['rendering']
     renderer = mdl.Renderer(model, rendering_cfg, device=device)
     # init model
@@ -65,7 +65,7 @@ def train(cfg):
         load_dict = checkpoint_io.load(load_dir, load_model_only=cfg['training']['load_ckpt_model_only'])
     except FileExistsError:
         load_dict = dict()
-        
+
     # resume training
     epoch_it = load_dict.get('epoch_it', -1)
     it = load_dict.get('it', -1)
@@ -76,26 +76,26 @@ def train(cfg):
 
     if not auto_scheduler:
         scheduler = optim.lr_scheduler.MultiStepLR(
-        optimizer, 
+        optimizer,
         milestones=list(range(scheduling_start, scheduling_epoch+scheduling_start, 10)),
         gamma=cfg['training']['scheduler_gamma'], last_epoch=epoch_it)
-    
-    
+
+
 
     # init camera extrinsics
     if cfg['pose']['learn_pose']:
         if cfg['pose']['init_pose']:
             if cfg['pose']['init_pose_type']=='gt':
-                init_pose = train_dataset['img'].c2ws 
+                init_pose = train_dataset['img'].c2ws
             elif cfg['pose']['init_pose_type']=='colmap':
                 init_pose = train_dataset['img'].c2ws_colmap
             init_pose = init_pose.to(device)
         else:
             init_pose = None
-            
-        pose_param_net = mdl.LearnPose(n_views, cfg['pose']['learn_R'], 
+
+        pose_param_net = mdl.LearnPose(n_views, cfg['pose']['learn_R'],
                             cfg['pose']['learn_t'], cfg, init_c2w=init_pose).to(device=device)
-        
+
         optimizer_pose = optim.Adam(pose_param_net.parameters(), lr=cfg['training']['pose_lr'])
         checkpoint_io_pose = mdl.CheckpointIO(out_dir, model=pose_param_net, optimizer=optimizer_pose)
         try:
@@ -105,7 +105,7 @@ def train(cfg):
             load_dict = dict()
         epoch_it = load_dict.get('epoch_it', -1)
         if not auto_scheduler:
-            scheduler_pose = torch.optim.lr_scheduler.MultiStepLR(optimizer_pose, 
+            scheduler_pose = torch.optim.lr_scheduler.MultiStepLR(optimizer_pose,
                                                                 milestones=list(range(scheduling_start, scheduling_epoch+scheduling_start, 100)),
                                                                 gamma=cfg['training']['scheduler_gamma_pose'], last_epoch=epoch_it)
     else:
@@ -123,18 +123,18 @@ def train(cfg):
             load_dict = dict()
         epoch_it = load_dict.get('epoch_it', -1)
         if not auto_scheduler:
-            scheduler_distortion = torch.optim.lr_scheduler.MultiStepLR(optimizer_distortion, 
+            scheduler_distortion = torch.optim.lr_scheduler.MultiStepLR(optimizer_distortion,
                                                                     milestones=list(range(scheduling_start, 10000+scheduling_start, 100)),
                                                                     gamma=cfg['training']['scheduler_gamma_distortion'], last_epoch=epoch_it)
     else:
         optimizer_distortion = None
         distortion_net = None
 
-    # init intrinsics 
+    # init intrinsics
     if cfg['pose']['learn_focal']:
         if cfg['pose']['init_focal_type']=='gt':
             init_focal=[train_dataset['img'].K[0, 0], -train_dataset['img'].K[1, 1]]
-        else: 
+        else:
             init_focal = None
         focal_net = mdl.LearnFocal(cfg['pose']['update_focal'], cfg['pose']['fx_only'], order=cfg['pose']['focal_order'], init_focal=init_focal).to(device=device)
         optimizer_focal = torch.optim.Adam(focal_net.parameters(), lr=cfg['training']['focal_lr'])
@@ -151,19 +151,19 @@ def train(cfg):
     else:
         optimizer_focal = None
         focal_net = None
-   
+
      # init training
     training_cfg = cfg['training']
-    trainer = mdl.Trainer(nope_nerf, optimizer, training_cfg, device=device, optimizer_pose=optimizer_pose, 
+    trainer = mdl.Trainer(nope_nerf, optimizer, training_cfg, device=device, optimizer_pose=optimizer_pose,
                         pose_param_net=pose_param_net, optimizer_focal=optimizer_focal,focal_net=focal_net,
                         optimizer_distortion=optimizer_distortion,distortion_net=distortion_net, cfg_all=cfg
                         )
 
-    
-    
+
+
 
     logger = SummaryWriter(os.path.join(out_dir, 'logs'))
-        
+
     # init training output
     print_every = cfg['training']['print_every']
     checkpoint_every = cfg['training']['checkpoint_every']
@@ -175,7 +175,7 @@ def train(cfg):
     render_path = os.path.join(out_dir, 'rendering')
     if not os.path.exists(render_path):
         os.makedirs(render_path)
-    
+
 
 
     # Print model
@@ -184,7 +184,7 @@ def train(cfg):
     logger_py.info('Total number of parameters: %d' % nparameters)
     t0b = time.time()
 
-    
+
     patient = cfg['training']['patient']
     length_smooth=cfg['training']['length_smooth']
     scheduling_mode = cfg['training']['scheduling_mode']
@@ -225,15 +225,15 @@ def train(cfg):
                         logger.add_scalar('train/scale'+l, num, it)
                     for l, num in shift_dict.items():
                         logger.add_scalar('train/shift'+l, num, it)
-            
+
             if visualize_every > 0 and (it % visualize_every)==0:
                 logger_py.info("Rendering")
                 out_render_path = os.path.join(render_path, '%04d_vis' % it)
                 if not os.path.exists(out_render_path):
                     os.makedirs(out_render_path)
                 val_rgb = trainer.render_visdata(
-                            data_test, 
-                            cfg['training']['vis_resolution'], 
+                            data_test,
+                            cfg['training']['vis_resolution'],
                             it, out_render_path)
                 #logger.add_image('rgb', val_rgb, it)
             # Run validation
@@ -242,7 +242,7 @@ def train(cfg):
 
                 for k, v in eval_dict.items():
                     logger.add_scalar('val/%s' % k, v, it)
-        
+
             # Save checkpoint
             if (checkpoint_every > 0 and (it % checkpoint_every) == 0):
                 logger_py.info('Saving checkpoint')
@@ -269,9 +269,9 @@ def train(cfg):
                     checkpoint_io_distortion.save('model_distortion_%d.pt' % it, epoch_it=epoch_it, it=it)
 
         pc_loss_epoch = np.mean(pc_loss_epoch)
-        logger.add_scalar('train/loss_pc_epoch', pc_loss_epoch, it) 
-        rgb_s_loss_epoch = np.mean(rgb_s_loss_epoch) 
-        logger.add_scalar('train/loss_rgbs_epoch', rgb_s_loss_epoch, it)  
+        logger.add_scalar('train/loss_pc_epoch', pc_loss_epoch, it)
+        rgb_s_loss_epoch = np.mean(rgb_s_loss_epoch)
+        logger.add_scalar('train/loss_rgbs_epoch', rgb_s_loss_epoch, it)
         if (eval_pose_every>0 and (epoch_it % eval_pose_every) == 0):
             with torch.no_grad():
                 learned_poses = torch.stack([pose_param_net(i) for i in range(n_views)])
@@ -286,12 +286,12 @@ def train(cfg):
             }
             for l, num in eval_dict.items():
                 logger.add_scalar('eval/'+l, num, it)
-        if (eval_img_every>0 and (epoch_it % eval_img_every) == 0):    
+        if (eval_img_every>0 and (epoch_it % eval_img_every) == 0):
             L2_loss_mean = np.mean(L2_loss_epoch)
             psnr = mse2psnr(L2_loss_mean)
             tqdm.write('{0:6d} ep: Train: PSNR: {1:.3f}'.format(epoch_it, psnr))
             logger.add_scalar('train/psnr', psnr, it)
-            
+
         if not auto_scheduler:
             scheduler.step()
             new_lr = scheduler.get_lr()[0]
@@ -360,4 +360,3 @@ if __name__=='__main__':
     # backup model
     backup(cfg['training']['out_dir'], args.config)
     train(cfg=cfg)
-    

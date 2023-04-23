@@ -1,15 +1,15 @@
 name: nope-nerf
 channels:
-  - pytorch
+  # - pytorch
   - conda-forge
   - anaconda
   - defaults
 dependencies:
   - python=3.9
-  - pytorch=1.7
-  - torchvision=0.8.2 
-  - torchaudio 
-  - cudatoolkit=10.1
+  #- pytorch=1.7
+  #- torchvision=0.8.2
+  #- torchaudio
+  #- cudatoolkit=10.1
   - cffi
   - cython
   - imageio

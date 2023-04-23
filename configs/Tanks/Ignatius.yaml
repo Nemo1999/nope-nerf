@@ -12,3 +12,5 @@ training:
   auto_scheduler: True
 extract_images:
   resolution: [540, 960]
+
+gpu_id: 6
