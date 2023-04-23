@@ -13,4 +13,4 @@ training:
 extract_images:
   resolution: [540, 960]
 
-gpu_id: 6
+gpu_id: 0

@@ -7,12 +7,12 @@ from PIL import Image
 import imageio
 from torch.nn import functional as F
 from model.common import (
-    get_tensor_values, 
+    get_tensor_values,
      arange_pixels,  project_to_cam, transform_to_world,
 )
 logger_py = logging.getLogger(__name__)
 class Trainer(object):
-    def __init__(self, model, optimizer, cfg, device=None, optimizer_pose=None, pose_param_net=None, 
+    def __init__(self, model, optimizer, cfg, device=None, optimizer_pose=None, pose_param_net=None,
                     optimizer_focal=None, focal_net=None, optimizer_distortion=None,distortion_net=None, **kwargs):
         """model trainer
 
@@ -37,7 +37,7 @@ class Trainer(object):
         self.optimizer_focal = optimizer_focal
         self.distortion_net = distortion_net
         self.optimizer_distortion = optimizer_distortion
-        
+
         self.n_training_points = cfg['n_training_points']
         self.rendering_technique = cfg['type']
         self.vis_geo = cfg['vis_geo']
@@ -96,7 +96,7 @@ class Trainer(object):
             self.optimizer_distortion.step()
         return loss_dict
 
-    
+
     def render_visdata(self, data, resolution, it, out_render_path):
         (img, dpt, camera_mat, scale_mat, img_idx) = self.process_data_dict(data)
         h, w = resolution
@@ -105,13 +105,13 @@ class Trainer(object):
             world_mat = torch.inverse(c2w).unsqueeze(0)
         if self.optimizer_focal:
             fxfy = self.focal_net(0)
-            camera_mat = torch.tensor([[[fxfy[0], 0, 0, 0], 
+            camera_mat = torch.tensor([[[fxfy[0], 0, 0, 0],
                 [0, -fxfy[1], 0, 0],
                 [0, 0, -1, 0],
                 [0, 0, 0, 1]]]).to(self.device)
         p_idx = torch.arange(h*w).to(self.device)
         p_loc, pixels = arange_pixels(resolution=(h, w))
-        
+
         pixels = pixels.to(self.device)
         depth_input = dpt
 
@@ -126,15 +126,15 @@ class Trainer(object):
                 rgb_pred.append(rgb_pred_i)
                 depth_pred_i = out_dict['depth_pred']
                 depth_pred.append(depth_pred_i)
-                
+
             rgb_pred = torch.cat(rgb_pred, dim=1)
             depth_pred = torch.cat(depth_pred, dim=0)
-     
+
             rgb_pred = rgb_pred.view(h, w, 3).detach().cpu().numpy()
             img_out = (rgb_pred * 255).astype(np.uint8)
             depth_pred_out = depth_pred.view(h, w).detach().cpu().numpy()
             imageio.imwrite(os.path.join(out_render_path,'%04d_depth.png'% img_idx), depth_pred_out)
-            
+
             img1 = Image.fromarray(
                 (img_out).astype(np.uint8)
             ).convert("RGB").save(
@@ -147,12 +147,12 @@ class Trainer(object):
                          pixels_i, None, camera_mat, world_mat, scale_mat, 'phong_renderer',
                         add_noise=False, eval_mode=True, it=it, depth_img=depth_input, img_size=(h, w))['rgb']
                         for i, pixels_i in enumerate(torch.split(pixels, 1024, dim=1))]
-            
-                rgb_pred = torch.cat(rgb_pred, dim=1).cpu()              
+
+                rgb_pred = torch.cat(rgb_pred, dim=1).cpu()
                 rgb_pred = rgb_pred.view(h, w, 3).detach().cpu().numpy()
                 img_out = (rgb_pred * 255).astype(np.uint8)
-                  
-                
+
+
                 img1 = Image.fromarray(
                     (img_out).astype(np.uint8)
                 ).convert("RGB").save(
@@ -171,7 +171,7 @@ class Trainer(object):
         dpt = data.get('img.dpt').to(device).unsqueeze(1)
         camera_mat = data.get('img.camera_mat').to(device)
         scale_mat = data.get('img.scale_mat').to(device)
-       
+
         return (img, dpt, camera_mat, scale_mat, img_idx)
     def process_data_reference(self, data):
         ''' Processes the data dictionary and returns respective tensors
@@ -192,7 +192,7 @@ class Trainer(object):
             return end_weight
         else:
             return start_weight + (end_weight - start_weight) * (current - anneal_start_epoch) / anneal_epoches
-        
+
     def compute_loss(self, data, eval_mode=False, it=None, epoch=None, scheduling_start=None, out_render_path=None):
         ''' Compute the loss.
 
@@ -214,7 +214,7 @@ class Trainer(object):
 
         n_points = self.n_training_points
         nl = self.nearest_limit
-        (img,  depth_input, camera_mat_gt, scale_mat, img_idx) = self.process_data_dict(data)   
+        (img,  depth_input, camera_mat_gt, scale_mat, img_idx) = self.process_data_dict(data)
         if use_ref_imgs:
             (ref_img, depth_ref, ref_idx) = self.process_data_reference(data)
 
@@ -225,16 +225,16 @@ class Trainer(object):
         kwargs['t_list']=self.pose_param_net.get_t()
         kwargs['weights'] = weights
 
-       
+
 
         if self.pose_param_net is not None:
             num_cams = self.pose_param_net.num_cams
             c2w = self.pose_param_net(img_idx)
             world_mat = torch.inverse(c2w).unsqueeze(0)
-        
+
         if self.distortion_net is not None:
             scale_input,shift_input = self.distortion_net(img_idx)
-            if self.shift_first:   
+            if self.shift_first:
                 depth_input = (depth_input + shift_input) * scale_input
             else:
                 depth_input = depth_input * scale_input + shift_input
@@ -247,7 +247,7 @@ class Trainer(object):
             camera_mat = camera_mat.view(1, 4, 4)
         else:
             camera_mat = camera_mat_gt
-        
+
         # Sample pixels
         ray_idx = torch.randperm(h*w,device=device)[:n_points]
         img_flat = img.view(batch_size, 3, h*w).permute(0,2,1)
@@ -255,14 +255,14 @@ class Trainer(object):
         p_full = arange_pixels((h, w), batch_size, device=device)[1]
         p = p_full[:, ray_idx]
         pix = ray_idx
-        
 
-        
+
+
         if render_model:
             out_dict = self.model(
-                p, pix, camera_mat, world_mat, scale_mat, 
-                self.rendering_technique, it=it, 
-                eval_mode=eval_mode, depth_img=depth_input, 
+                p, pix, camera_mat, world_mat, scale_mat,
+                self.rendering_technique, it=it,
+                eval_mode=eval_mode, depth_img=depth_input,
                  img_size=(h, w))
             rendered_rgb = out_dict['rgb']
             rendered_depth = out_dict['depth_pred']
@@ -286,8 +286,8 @@ class Trainer(object):
                 shift_ref = shift_ref.detach()
                 depth_ref = depth_ref.detach()
             ref_Rt = torch.inverse(c2w_ref).unsqueeze(0)
-            
-            
+
+
             if img_idx < (num_cams-1):
                 d1 = depth_input
                 d2 = depth_ref
@@ -295,8 +295,8 @@ class Trainer(object):
                 img2 = ref_img
                 Rt_rel_12 = ref_Rt @ torch.inverse(world_mat)
                 R_rel_12 = Rt_rel_12[:, :3, :3]
-                t_rel_12 = Rt_rel_12[:, :3, 3]  
-                scale1 = scale_input 
+                t_rel_12 = Rt_rel_12[:, :3, 3]
+                scale1 = scale_input
             else:
                 d1 = depth_ref
                 d2 = depth_input
@@ -304,7 +304,7 @@ class Trainer(object):
                 img2 = img
                 Rt_rel_12 =  world_mat @ torch.inverse(ref_Rt)
                 R_rel_12 = Rt_rel_12[:, :3, :3]
-                t_rel_12 = Rt_rel_12[:, :3, 3] 
+                t_rel_12 = Rt_rel_12[:, :3, 3]
                 scale1 = scale_ref
 
             ratio = self.pc_ratio
@@ -314,13 +314,13 @@ class Trainer(object):
             d2 = F.interpolate(d2, sample_resolution ,mode='nearest')
             d1[d1<nl] = nl
             d2[d2<nl] = nl
-            pc1 = transform_to_world(p_pc, d1.view(1, -1, 1), camera_mat)
-            pc2 = transform_to_world(p_pc, d2.view(1, -1, 1), camera_mat)
-            
+            pc1 = transform_to_world(p_pc, d1.view(1, -1, 1), camera_mat, device=device)
+            pc2 = transform_to_world(p_pc, d2.view(1, -1, 1), camera_mat, device=device)
+
             if self.rgb_s_weight!=0.0:
                 img1 = F.interpolate(img1, sample_resolution ,mode='bilinear')
                 img2 = F.interpolate(img2, sample_resolution ,mode='bilinear')
-                rgb_pc1 = get_tensor_values(img1, p_pc, mode='bilinear', scale=False, detach=False, detach_p=False, align_corners=True) 
+                rgb_pc1 = get_tensor_values(img1, p_pc, mode='bilinear', scale=False, detach=False, detach_p=False, align_corners=True)
                 if self.detach_rgbs_scale:
                     pc1_ = pc1.detach().clone()
                     pc1_rotated = pc1_ @ R_rel_12.transpose(1,2) + t_rel_12
@@ -350,23 +350,22 @@ class Trainer(object):
             if self.scale_pcs:
                 pc1 = pc1 / scale1
                 pc2 = pc2 / scale1
-            
+
             kwargs['X'] = pc1 @ R_rel_12.transpose(1,2) + t_rel_12
             kwargs['Y'] = pc2
 
             kwargs['sample_resolution'] = sample_resolution
             kwargs['p_2d'] = pixel_locations
-            
 
-        
+
+
         if render_model and self.detach_gt_depth:
             gt_depth = gt_depth.detach()
         loss_dict = self.loss(rendered_rgb, rgb_gt, rendered_depth, gt_depth, **kwargs)
         if self.optimizer_focal:
             loss_dict['focalx'] = fxfy[0] / camera_mat_gt[0, 0, 0]
             loss_dict['focaly'] = fxfy[1] / camera_mat_gt[0, 1, 1]
-        
+
         loss_dict['scale'] = scale_input
         loss_dict['shift'] = shift_input
         return loss_dict
-    

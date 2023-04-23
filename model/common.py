@@ -24,7 +24,7 @@ def arange_pixels(resolution=(128, 128), batch_size=1, image_range=(-1., 1.),
         device (torch.device): device to use
     '''
     h, w = resolution
-    
+
     # Arrange pixel location in scale resolution
     pixel_locations = torch.meshgrid(torch.arange(0, h, device=device), torch.arange(0, w, device=device))
     pixel_locations = torch.stack(
@@ -84,12 +84,12 @@ def get_tensor_values(tensor, p,  mode='nearest',
         mode (str): interpolation mode
         scale (bool): whether to scale p from image coordinates to [-1, 1]
         detach (bool): whether to detach the output
-        detach_p (bool): whether to detach p    
+        detach_p (bool): whether to detach p
         align_corners (bool): whether to align corners for grid_sample
-    ''' 
-    
+    '''
+
     batch_size, _, h, w = tensor.shape
-    
+
 
     # p = pe.clone()
     # p = pe
@@ -110,7 +110,7 @@ def get_tensor_values(tensor, p,  mode='nearest',
 
 
 def transform_to_world(pixels, depth, camera_mat, world_mat=None, scale_mat=None,
-                       invert=True, device=torch.device("cuda")):
+                       invert=True, device=None):
     ''' Transforms pixel positions p with given depth value d to world coordinates.
 
     Args:
@@ -132,8 +132,8 @@ def transform_to_world(pixels, depth, camera_mat, world_mat=None, scale_mat=None
     camera_mat = to_pytorch(camera_mat)
     world_mat = to_pytorch(world_mat)
     scale_mat = to_pytorch(scale_mat)
-    
-    
+
+
     # Invert camera matrices
     if invert:
         camera_mat = torch.inverse(camera_mat)
@@ -308,7 +308,7 @@ def make_c2w(r, t):
     c2w = torch.cat([R, t.unsqueeze(1)], dim=1)  # (3, 4)
     c2w = convert3x4_4x4(c2w)  # (4, 4)
     return c2w
-    
+
 def convert3x4_4x4(input):
     """
     :param input:  (N, 3, 4) or (3, 4) torch or np
@@ -331,7 +331,7 @@ def convert3x4_4x4(input):
 
 # https://github.dev/kwea123/ngp_pl
 def create_spheric_poses(radius, mean_h, n_poses=120):
-    
+
     """
     Create circular poses around z axis.
     Inputs:
@@ -403,7 +403,7 @@ def poses_avg(poses):
 
 
 def reprojection(pixels, depth, Rt_ref, world_mat, camera_mat):
-   
+
     assert(pixels.shape[-1] == 2)
 
     # Convert to pytorch
@@ -427,7 +427,7 @@ def reprojection(pixels, depth, Rt_ref, world_mat, camera_mat):
     # Transform p_world back to 3D coordinates
     xy_ref = xy_ref[:, :3].permute(0, 2, 1)
     xy_ref = xy_ref[..., :2] / xy_ref[..., 2:]
-    
+
     valid_points = xy_ref.abs().max(dim=-1)[0] <= 1
     valid_mask = valid_points.unsqueeze(-1).float()
     if is_numpy:
@@ -448,8 +448,8 @@ def project_to_cam(points, camera_mat, device):
 
     xy_ref = xy_ref[:, :3].permute(0, 2, 1)
     xy_ref = xy_ref[..., :2] / xy_ref[..., 2:]
-    
-    
+
+
     valid_points = xy_ref.abs().max(dim=-1)[0] <= 1
     valid_mask = valid_points.unsqueeze(-1).bool()
     if is_numpy:
@@ -596,7 +596,7 @@ def generate_spiral_nerf(learned_poses, bds, N_novel_views, hwf):
     # Get average pose
     up = normalize(learned_poses_[:, :3, 1].sum(0))
     # Find a reasonable "focus depth" for this dataset
-    
+
     close_depth, inf_depth = bds.min()*.9, bds.max()*5.
     dt = .75
     mean_dz = 1./(((1.-dt)/close_depth + dt/inf_depth))
